@@ -45,6 +45,8 @@ info "Reading and analyzing GPG keys..."
 keys_to_delete=()
 reasons=()
 uids=()
+good_keys=()
+good_uids=()
 
 # Process keys and UIDs in one pass
 while IFS= read -r line; do
@@ -52,17 +54,25 @@ while IFS= read -r line; do
   
   if [ "$type" == "pub" ]; then
     current_key_id=$key_id
+    is_bad=0
     
     # Check for expired keys
     if [[ "$expires_date" =~ ^[0-9]+$ ]] && [ "$expires_date" -lt "$(date +%s)" ]; then
       keys_to_delete+=("$current_key_id")
       reasons+=("Expired")
       uids+=("$(gpg --list-keys --with-colons "$current_key_id" | grep "^uid" | head -n 1 | cut -d: -f10)")
+      is_bad=1
     # Check for keys with unknown validity
     elif [ "$validity" == "-" ]; then
       keys_to_delete+=("$current_key_id")
       reasons+=("Unknown validity")
       uids+=("$(gpg --list-keys --with-colons "$current_key_id" | grep "^uid" | head -n 1 | cut -d: -f10)")
+      is_bad=1
+    fi
+
+    if [ $is_bad -eq 0 ]; then
+        good_keys+=("$current_key_id")
+        good_uids+=("$(gpg --list-keys --with-colons "$current_key_id" | grep "^uid" | head -n 1 | cut -d: -f10)")
     fi
   fi
 done < <(gpg --list-keys --with-colons)
@@ -71,6 +81,14 @@ done < <(gpg --list-keys --with-colons)
 
 echo
 info "--- Analysis Summary ---"
+
+if [ ${#good_keys[@]} -gt 0 ]; then
+    info "The following valid keys will be RETAINED:"
+    for i in "${!good_keys[@]}"; do
+      echo "  - Key ID: ${good_keys[$i]}"
+      echo "    UID:    ${good_uids[$i]}"
+    done
+fi
 
 if [ ${#keys_to_delete[@]} -eq 0 ]; then
   info "No expired or unknown keys found to delete."
