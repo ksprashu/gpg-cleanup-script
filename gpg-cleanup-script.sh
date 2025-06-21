@@ -85,8 +85,8 @@ info "--- Analysis Summary ---"
 if [ ${#good_keys[@]} -gt 0 ]; then
     info "The following valid keys will be RETAINED:"
     for i in "${!good_keys[@]}"; do
-      echo "  - Key ID: ${good_keys[$i]}"
-      echo "    UID:    ${good_uids[$i]}"
+      echo -e "${GREEN}  - Key ID: ${good_keys[$i]}${NC}"
+      echo -e "${GREEN}    UID:    ${good_uids[$i]}${NC}"
     done
 fi
 
@@ -97,9 +97,9 @@ fi
 
 warn "The following keys are flagged for deletion:"
 for i in "${!keys_to_delete[@]}"; do
-  echo "  - Key ID: ${keys_to_delete[$i]}"
-  echo "    UID:    ${uids[$i]}"
-  echo "    Reason: ${reasons[$i]}"
+  echo -e "${RED}  - Key ID: ${keys_to_delete[$i]}${NC}"
+  echo -e "${RED}    UID:    ${uids[$i]}${NC}"
+  echo -e "${RED}    Reason: ${reasons[$i]}${NC}"
 done
 
 if [ $DELETE_MODE -eq 0 ]; then
