@@ -36,6 +36,11 @@ declare -a unknown_key_ids
 info "Searching for expired or unknown public keys..."
 
 while IFS=':' read -r type validity key_length algo key_id created_date expires_date _; do
+  # Only process public key lines ('pub')
+  if [ "$type" != "pub" ]; then
+    continue
+  fi
+
   # Skip empty key IDs
   if [ -z "$key_id" ]; then
     continue
@@ -59,6 +64,11 @@ done < <(gpg --list-keys --with-colons)
 info "Searching for expired secret keys..."
 
 while IFS=':' read -r type validity key_length algo key_id created_date expires_date _; do
+  # Only process secret key lines ('sec')
+  if [ "$type" != "sec" ]; then
+    continue
+  fi
+
   # Check for expired secret keys
   if [[ "$expires_date" =~ ^[0-9]+$ ]] && [ "$expires_date" -lt "$now" ]; then
     warn "Found expired secret key: $key_id"
@@ -109,11 +119,17 @@ all_keys_to_delete=("${expired_key_ids[@]}" "${unknown_key_ids[@]}")
 unique_keys_to_delete=($(for key in "${all_keys_to_delete[@]}"; do echo "${key}"; done | sort -u))
 
 for key_id in "${unique_keys_to_delete[@]}"; do
-  info "Deleting public key: $key_id"
-  gpg --batch --yes --delete-keys "$key_id" || error "Failed to delete public key $key_id. It might not exist or there was another error."
+  fingerprint=$(gpg --with-colons --fingerprint "$key_id" | grep "^fpr" | head -n 1 | cut -d: -f10)
   
+  if [ -z "$fingerprint" ]; then
+    error "Could not get fingerprint for key $key_id"
+  fi
+
   info "Attempting to delete secret key (if it exists): $key_id"
-  gpg --batch --yes --delete-secret-keys "$key_id" || warn "No secret key found for $key_id, or it was already deleted. This is usually normal."
+  gpg --batch --yes --delete-secret-keys "$fingerprint" || warn "No secret key found for $key_id, or it was already deleted. This is usually normal."
+
+  info "Deleting public key: $key_id"
+  gpg --batch --yes --delete-keys "$fingerprint" || error "Failed to delete public key $key_id. It might not exist or there was another error."
 done
 
 info "Cleanup complete!"
