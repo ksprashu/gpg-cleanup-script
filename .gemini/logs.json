@@ -1,0 +1,23 @@
+[
+  {
+    "sessionId": "7264065e-9c45-4a77-aa71-1012a9c10201",
+    "messageId": 0,
+    "type": "user",
+    "message": "create a script for me that goes through all my gpg keys and secrets, and deletes the ones that either expired, or unknown. I only want the valid ones retained. Help me cleanup my gpg keys and secrets.",
+    "timestamp": "2025-06-21T12:41:39.812Z"
+  },
+  {
+    "sessionId": "7264065e-9c45-4a77-aa71-1012a9c10201",
+    "messageId": 1,
+    "type": "user",
+    "message": "Can you run the script and check that it works? Check for any errors and fix it if so.",
+    "timestamp": "2025-06-21T12:43:18.813Z"
+  },
+  {
+    "sessionId": "7264065e-9c45-4a77-aa71-1012a9c10201",
+    "messageId": 2,
+    "type": "user",
+    "message": "initialise a git repo in the folder, create a gitignore file, license file with MIT, a nice readme, and commit the changes",
+    "timestamp": "2025-06-21T14:52:59.225Z"
+  }
+]
