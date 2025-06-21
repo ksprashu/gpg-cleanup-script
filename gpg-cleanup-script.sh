@@ -52,29 +52,18 @@ while IFS= read -r line; do
   
   if [ "$type" == "pub" ]; then
     current_key_id=$key_id
-    current_uid=""
-    has_uid=0
     
     # Check for expired keys
     if [[ "$expires_date" =~ ^[0-9]+$ ]] && [ "$expires_date" -lt "$(date +%s)" ]; then
       keys_to_delete+=("$current_key_id")
       reasons+=("Expired")
-      uids+=("<No UID found>")
+      uids+=("$(gpg --list-keys --with-colons "$current_key_id" | grep "^uid" | head -n 1 | cut -d: -f10)")
     # Check for keys with unknown validity
     elif [ "$validity" == "-" ]; then
       keys_to_delete+=("$current_key_id")
       reasons+=("Unknown validity")
-      uids+=("<No UID found>")
+      uids+=("$(gpg --list-keys --with-colons "$current_key_id" | grep "^uid" | head -n 1 | cut -d: -f10)")
     fi
-  elif [ "$type" == "uid" ]; then
-    # If we find a UID, the key is not "unknown" in the sense of having no UID
-    has_uid=1
-    # Find the key this UID belongs to and update the UID
-    for i in "${!keys_to_delete[@]}"; do
-      if [[ "${keys_to_delete[$i]}" == "${key_id: -16}" ]]; then
-        uids[$i]="$uid"
-      fi
-    done
   fi
 done < <(gpg --list-keys --with-colons)
 
