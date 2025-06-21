@@ -9,12 +9,17 @@ This script helps you clean up your GPG keyring by identifying and deleting expi
     chmod +x gpg-cleanup-script.sh
     ```
 
-2.  **Run the script:**
+2.  **Perform a dry run:**
     ```bash
     ./gpg-cleanup-script.sh
     ```
+    This will list the keys that are flagged for deletion without actually deleting them.
 
-The script will list all the keys that are either expired or have an unknown validity. It will then prompt you for confirmation before deleting them.
+3.  **Delete the keys:**
+    ```bash
+    ./gpg-cleanup-script.sh --delete
+    ```
+    This will prompt you for confirmation and then delete the flagged keys.
 
 ## License
 
