@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Helper Functions ---
+# --- Configuration and Helper Functions ---
 
 # Color codes for formatting output
 readonly GREEN='\033[0;32m'
@@ -9,102 +9,100 @@ readonly RED='\033[0;31m'
 readonly YELLOW='\033[0;33m'
 readonly NC='\033[0m' # No Color
 
-info() {
-  echo -e "${GREEN}[INFO]${NC} $1"
+info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+
+usage() {
+  echo "Usage: $0 [options]"
+  echo
+  echo "A script to find and delete expired or unknown GPG keys."
+  echo
+  echo "Options:"
+  echo "  --delete    Actually delete the keys found. Default is a dry run."
+  echo "  -h, --help  Display this help message."
+  echo
+  echo "The script runs in 'dry run' mode by default, only showing what would be deleted."
 }
 
-warn() {
-  echo -e "${YELLOW}[WARN]${NC} $1"
-}
+# --- Command-line Argument Parsing ---
 
-error() {
-  echo -e "${RED}[ERROR]${NC} $1"
-  exit 1
-}
+DELETE_MODE=0
+if [[ "${1:-}" == "--delete" ]]; then
+  DELETE_MODE=1
+  warn "Running in DELETE mode. Keys will be permanently removed after confirmation."
+elif [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+else
+  info "Running in DRY RUN mode. No keys will be deleted."
+fi
 
 # --- Main Logic ---
 
-# Get the current date in Unix timestamp format
-now=$(date +%s)
+info "Reading and analyzing GPG keys..."
 
-# Arrays to store key IDs for deletion
-declare -a expired_key_ids
-declare -a unknown_key_ids
+keys_to_delete=()
+reasons=()
+uids=()
 
-# --- Identify Expired and Unknown Public Keys ---
-
-info "Searching for expired or unknown public keys..."
-
-while IFS=':' read -r type validity key_length algo key_id created_date expires_date _; do
-  # Only process public key lines ('pub')
-  if [ "$type" != "pub" ]; then
-    continue
-  fi
-
-  # Skip empty key IDs
-  if [ -z "$key_id" ]; then
-    continue
-  fi
-
-  # Check for expired keys
-  if [[ "$expires_date" =~ ^[0-9]+$ ]] && [ "$expires_date" -lt "$now" ]; then
-    warn "Found expired key: $key_id"
-    expired_key_ids+=("$key_id")
-  fi
-
-  # Check for keys with unknown validity
-  if [ "$validity" == "u" ]; then
-    warn "Found key with unknown validity: $key_id"
-    unknown_key_ids+=("$key_id")
+# Process keys and UIDs in one pass
+while IFS= read -r line; do
+  IFS=':' read -r type validity _ _ key_id _ expires_date _ _ uid _ <<< "$line"
+  
+  if [ "$type" == "pub" ]; then
+    current_key_id=$key_id
+    current_uid=""
+    has_uid=0
+    
+    # Check for expired keys
+    if [[ "$expires_date" =~ ^[0-9]+$ ]] && [ "$expires_date" -lt "$(date +%s)" ]; then
+      keys_to_delete+=("$current_key_id")
+      reasons+=("Expired")
+      uids+=("<No UID found>")
+    # Check for keys with unknown validity
+    elif [ "$validity" == "-" ]; then
+      keys_to_delete+=("$current_key_id")
+      reasons+=("Unknown validity")
+      uids+=("<No UID found>")
+    fi
+  elif [ "$type" == "uid" ]; then
+    # If we find a UID, the key is not "unknown" in the sense of having no UID
+    has_uid=1
+    # Find the key this UID belongs to and update the UID
+    for i in "${!keys_to_delete[@]}"; do
+      if [[ "${keys_to_delete[$i]}" == "${key_id: -16}" ]]; then
+        uids[$i]="$uid"
+      fi
+    done
   fi
 done < <(gpg --list-keys --with-colons)
-
-# --- Identify Expired Secret Keys ---
-
-info "Searching for expired secret keys..."
-
-while IFS=':' read -r type validity key_length algo key_id created_date expires_date _; do
-  # Only process secret key lines ('sec')
-  if [ "$type" != "sec" ]; then
-    continue
-  fi
-
-  # Check for expired secret keys
-  if [[ "$expires_date" =~ ^[0-9]+$ ]] && [ "$expires_date" -lt "$now" ]; then
-    warn "Found expired secret key: $key_id"
-    # Avoid adding duplicates if the public key is also expired
-    if ! [[ " ${expired_key_ids[@]} " =~ " ${key_id} " ]]; then
-      expired_key_ids+=("$key_id")
-    fi
-  fi
-done < <(gpg --list-secret-keys --with-colons)
 
 # --- Summary and Confirmation ---
 
 echo
-info "--- Deletion Summary ---"
+info "--- Analysis Summary ---"
 
-if [ ${#expired_key_ids[@]} -eq 0 ] && [ ${#unknown_key_ids[@]} -eq 0 ]; then
-  info "No expired or unknown keys found. Your GPG keyring is clean!"
+if [ ${#keys_to_delete[@]} -eq 0 ]; then
+  info "No expired or unknown keys found to delete."
   exit 0
 fi
 
-if [ ${#expired_key_ids[@]} -gt 0 ]; then
-  warn "The following EXPIRED keys will be deleted:"
-  for key_id in "${expired_key_ids[@]}"; do
-    echo "  - $key_id"
-  done
-fi
+warn "The following keys are flagged for deletion:"
+for i in "${!keys_to_delete[@]}"; do
+  echo "  - Key ID: ${keys_to_delete[$i]}"
+  echo "    UID:    ${uids[$i]}"
+  echo "    Reason: ${reasons[$i]}"
+done
 
-if [ ${#unknown_key_ids[@]} -gt 0 ]; then
-  warn "The following keys with UNKNOWN validity will be deleted:"
-  for key_id in "${unknown_key_ids[@]}"; do
-    echo "  - $key_id"
-  done
+if [ $DELETE_MODE -eq 0 ]; then
+  echo
+  info "This was a dry run. To delete these keys, run the script with the --delete flag."
+  exit 0
 fi
 
 echo
-read -p "Do you want to proceed with the deletion? (y/N): " confirm
+read -p "Do you want to proceed with deleting the keys listed above? (y/N): " confirm
 if [[ ! "$confirm" =~ ^[yY](es)?$ ]]; then
   info "Aborting. No keys were deleted."
   exit 0
@@ -114,22 +112,18 @@ fi
 
 info "Proceeding with deletion..."
 
-all_keys_to_delete=("${expired_key_ids[@]}" "${unknown_key_ids[@]}")
-# Remove duplicates
-unique_keys_to_delete=($(for key in "${all_keys_to_delete[@]}"; do echo "${key}"; done | sort -u))
-
-for key_id in "${unique_keys_to_delete[@]}"; do
+for key_id in "${keys_to_delete[@]}"; do
   fingerprint=$(gpg --with-colons --fingerprint "$key_id" | grep "^fpr" | head -n 1 | cut -d: -f10)
   
   if [ -z "$fingerprint" ]; then
-    error "Could not get fingerprint for key $key_id"
+    error "Could not get fingerprint for key $key_id. Aborting."
   fi
 
-  info "Attempting to delete secret key (if it exists): $key_id"
-  gpg --batch --yes --delete-secret-keys "$fingerprint" || warn "No secret key found for $key_id, or it was already deleted. This is usually normal."
-
-  info "Deleting public key: $key_id"
-  gpg --batch --yes --delete-keys "$fingerprint" || error "Failed to delete public key $key_id. It might not exist or there was another error."
+  info "Deleting secret key for $key_id..."
+  gpg --batch --yes --delete-secret-keys "$fingerprint" || warn "No secret key found for $key_id, which is normal."
+  
+  info "Deleting public key for $key_id..."
+  gpg --batch --yes --delete-keys "$fingerprint" || error "Failed to delete public key $key_id."
 done
 
 info "Cleanup complete!"
